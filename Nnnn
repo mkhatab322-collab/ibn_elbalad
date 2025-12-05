@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" style="height: 100%;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ابن البلد - الكتالوج الإلكتروني</title>
+    <!-- تضمين مكتبة Tailwind CSS للتصميم -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- تضمين مكتبات Firebase الأساسية للتشغيل -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- تهيئة Firebase والمتغيرات العالمية ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // لا تقلق، سيتم ملء هذه المتغيرات تلقائيًا بمفاتيحك الخاصة
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+        
+        // متغيرات حالة التطبيق
+        let isAdminMode = false;
+        let products = [];
+        const ADMIN_PASSWORD = "mahmoud123@"; // كلمة مرور المدير
+
+        // المسار العام المشترك لجميع المنتجات (المشتري والمدير يقرأ ويكتب هنا)
+        const PUBLIC_PRODUCTS_PATH = `artifacts/${appId}/public/data/products`;
+
+        // دالة تحويل البيانات من Firestore
+        const mapProducts = (snapshot) => {
+            products = [];
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                products.push({
+                    id: doc.id,
+                    name: data.name,
+                    price: data.price,
+                    description: data.description,
+                    image: data.image || 'https://placehold.co/400x300/FEE6AA/8D5400?text=صورة+منتج',
+                });
+            });
+            // فرز المنتجات حسب الاسم أبجدياً في الذاكرة
+            products.sort((a, b) => a.name.localeCompare(b.name, 'ar', { sensitivity: 'base' }));
+            renderCatalog();
+        };
+
+        // دالة عرض الكتالوج (Product Grid)
+        const renderCatalog = () => {
+            const catalogContainer = document.getElementById('catalog-container');
+            if (!catalogContainer) return;
+            
+            catalogContainer.innerHTML = '';
+
+            if (products.length === 0) {
+                catalogContainer.innerHTML = `
+                    <div class="col-span-full text-center py-20 bg-amber-50 rounded-xl shadow-inner">
+                        <p class="text-xl font-bold text-amber-700">لا توجد منتجات حاليًا في الكتالوج.</p>
+                        ${isAdminMode ? '<p class="text-gray-600 mt-2">استخدم زر الإدارة لإضافة أول منتج!</p>' : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            products.forEach(product => {
+                const productCard = document.createElement('div');
+                productCard.className = `product-card bg-white p-4 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 relative group ${isAdminMode ? 'border-2 border-red-500' : ''}`;
+                
+                productCard.innerHTML = `
+                    <div class="h-48 overflow-hidden rounded-lg mb-4">
+                        <img src="${product.image}" alt="${product.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onerror="this.onerror=null;this.src='https://placehold.co/400x300/FEE6AA/8D5400?text=صورة+غير+متاحة';">
+                    </div>
+                    <h2 class="text-xl font-bold text-amber-800 mb-1 truncate">${product.name}</h2>
+                    <p class="text-3xl font-extrabold text-green-700 mb-3">${product.price} ج.م</p>
+                    <p class="text-gray-600 text-sm mb-4 line-clamp-3">${product.description}</p>
+                    
+                    ${isAdminMode ? `
+                        <div class="absolute top-2 left-2 flex space-x-2 rtl:space-x-reverse opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <button onclick="window.editProduct('${product.id}')" class="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-md transition-colors" title="تعديل المنتج">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zm-5.646 7.828l-2.828 2.828-2.828-2.828.793-.793 2.828-2.828-2.828 2.828zM10 12l-6 6h2l4-4 2-2zM4 16h12v2H4z"></path></svg>
+                            </button>
+                            <button onclick="window.deleteProduct('${product.id}', '${product.name}')" class="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-md transition-colors" title="حذف المنتج">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 011 1v6a1 1 0 11-2 0V8a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+                            </button>
+                        </div>
+                    ` : ''}
+                `;
+                catalogContainer.appendChild(productCard);
+            });
+        };
+
+        // --- وظائف الإدارة (Admin Functions) ---
+
+        window.toggleAdminMode = () => {
+            const adminPanel = document.getElementById('admin-panel');
+            const adminBtn = document.getElementById('admin-btn');
+            const authInput = document.getElementById('auth-input');
+
+            if (!isAdminMode) {
+                // محاولة الدخول لوضع المدير
+                if (adminPanel.classList.contains('hidden')) {
+                    adminPanel.classList.remove('hidden');
+                    authInput.focus();
+                } else {
+                    const password = authInput.value;
+                    if (password === ADMIN_PASSWORD) {
+                        isAdminMode = true;
+                        adminPanel.classList.add('hidden');
+                        adminBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                        adminBtn.classList.remove('bg-gray-700', 'hover:bg-gray-800');
+                        authInput.value = '';
+                        renderAdminMenu();
+                        renderCatalog(); // إعادة عرض الكتالوج بوضع الإدارة
+                        showMessage('تم تفعيل وضع الإدارة بنجاح.', 'success');
+                    } else {
+                        showMessage('كلمة المرور غير صحيحة.', 'error');
+                    }
+                }
+            } else {
+                // الخروج من وضع المدير وعرض القائمة
+                renderAdminMenu();
+            }
+        };
+
+        const renderAdminMenu = () => {
+            const adminBtn = document.getElementById('admin-btn');
+            if (!adminBtn || !isAdminMode) return;
+
+            const menu = document.createElement('div');
+            menu.className = "absolute bottom-16 right-0 w-48 bg-white rounded-lg shadow-xl p-2 z-50 text-right transform transition-opacity duration-300 ease-out";
+            menu.id = 'admin-menu';
+            
+            menu.innerHTML = `
+                <button onclick="window.showProductModal()" class="w-full text-right block px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+                    إضافة منتج جديد
+                </button>
+                <div class="border-t my-1"></div>
+                <button onclick="window.exitAdminMode()" class="w-full text-right block px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                    الخروج من وضع الإدارة
+                </button>
+            `;
+            
+            // إزالة أي قائمة سابقة قبل الإضافة
+            document.getElementById('admin-menu')?.remove();
+            document.body.appendChild(menu);
+
+            // إخفاء القائمة عند النقر خارجها
+            document.addEventListener('click', (e) => {
+                const menuElement = document.getElementById('admin-menu');
+                if (menuElement && !menuElement.contains(e.target) && e.target !== adminBtn) {
+                    menuElement.remove();
+                }
+            }, { once: true });
+        };
+
+        window.exitAdminMode = () => {
+            isAdminMode = false;
+            document.getElementById('admin-menu')?.remove();
+            const adminBtn = document.getElementById('admin-btn');
+            adminBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            adminBtn.classList.add('bg-gray-700', 'hover:bg-gray-800');
+            renderCatalog();
+            showMessage('تم الخروج من وضع الإدارة.', 'info');
+        };
+
+        window.showProductModal = (productId = null) => {
+            if (!isAdminMode) return;
+            document.getElementById('admin-menu')?.remove();
+            
+            const product = productId ? products.find(p => p.id === productId) : {};
+            const isEdit = !!productId;
+
+            const modal = document.getElementById('product-modal');
+            modal.classList.remove('hidden');
+
+            document.getElementById('modal-title').textContent = isEdit ? 'تعديل بيانات المنتج' : 'إضافة منتج جديد';
+            document.getElementById('product-id').value = productId || '';
+            document.getElementById('product-name').value = product.name || '';
+            document.getElementById('product-price').value = product.price || '';
+            document.getElementById('product-description').value = product.description || '';
+            document.getElementById('product-image').value = product.image || '';
+
+            document.getElementById('save-product-btn').textContent = isEdit ? 'حفظ التعديلات' : 'إضافة المنتج';
+        };
+
+        window.closeModal = () => {
+            document.getElementById('product-modal').classList.add('hidden');
+            document.getElementById('product-form').reset();
+        };
+
+        window.editProduct = (productId) => {
+            window.showProductModal(productId);
+        };
+
+        window.deleteProduct = async (productId, productName) => {
+            if (!isAdminMode) return;
+            const confirmAction = await window.showConfirm(`هل أنت متأكد من حذف المنتج: ${productName}؟`);
+            if (!confirmAction) return;
+
+            try {
+                // استخدام المسار العام للحذف
+                await deleteDoc(doc(db, PUBLIC_PRODUCTS_PATH, productId));
+                showMessage(`تم حذف المنتج "${productName}" بنجاح.`, 'success');
+            } catch (error) {
+                console.error("Error deleting document: ", error);
+                showMessage('فشل حذف المنتج. راجع سجل الأخطاء.', 'error');
+            }
+        };
+
+        window.saveProduct = async (event) => {
+            event.preventDefault();
+            if (!isAdminMode) return;
+
+            const productId = document.getElementById('product-id').value;
+            const name = document.getElementById('product-name').value;
+            const price = parseFloat(document.getElementById('product-price').value);
+            const description = document.getElementById('product-description').value;
+            const image = document.getElementById('product-image').value;
+
+            if (!name || isNaN(price) || price <= 0) {
+                showMessage('الرجاء إدخال اسم وسعر صالحين للمنتج.', 'error');
+                return;
+            }
+
+            const productData = { name, price, description, image, timestamp: Date.now() };
+
+            try {
+                // استخدام المسار العام لـ "public/data/products" للحفظ
+                const productRef = productId
+                    ? doc(db, PUBLIC_PRODUCTS_PATH, productId)
+                    : doc(collection(db, PUBLIC_PRODUCTS_PATH));
+
+                await setDoc(productRef, productData, { merge: !productId });
+
+                showMessage(`تم ${productId ? 'تعديل' : 'إضافة'} المنتج بنجاح!`, 'success');
+                window.closeModal();
+            } catch (error) {
+                console.error("Error saving product: ", error);
+                showMessage('فشل حفظ المنتج. راجع سجل الأخطاء.', 'error');
+            }
+        };
+
+        // --- وظائف العرض و Firebase Setup ---
+
+        const setupFirestoreListener = () => {
+            if (!isAuthReady || !db) return;
+            
+            // --- هذا هو المسار المصحح الذي يقرأ من المجموعة العامة ---
+            const productsCollectionRef = collection(db, PUBLIC_PRODUCTS_PATH);
+            const productsQuery = query(productsCollectionRef);
+
+            // الاستماع للتغييرات في قاعدة البيانات
+            onSnapshot(productsQuery, mapProducts, (error) => {
+                console.error("Error listening to products: ", error);
+                showMessage("حدث خطأ أثناء جلب المنتجات.", 'error');
+            });
+        };
+
+        const initFirebase = async () => {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is missing or empty.");
+                    document.getElementById('catalog-container').innerHTML = `
+                        <div class="col-span-full text-center py-20">
+                            <p class="text-xl font-bold text-red-600">خطأ في الإعداد: لم يتم تهيئة Firebase.</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    userId = user ? user.uid : null;
+                    isAuthReady = true;
+                    setupFirestoreListener();
+                });
+
+            } catch (e) {
+                console.error("Firebase initialization failed:", e);
+                showMessage("فشل تهيئة Firebase. يرجى مراجعة الإعدادات.", 'error');
+            }
+        };
+
+        // --- وظائف الواجهة التفاعلية (Modals & Messages) ---
+
+        window.showMessage = (message, type = 'info') => {
+            const container = document.getElementById('message-container');
+            if (!container) return;
+
+            const alertDiv = document.createElement('div');
+            let bgColor = 'bg-blue-100 border-blue-400 text-blue-700';
+            if (type === 'success') bgColor = 'bg-green-100 border-green-400 text-green-700';
+            if (type === 'error') bgColor = 'bg-red-100 border-red-400 text-red-700';
+            if (type === 'info') bgColor = 'bg-yellow-100 border-yellow-400 text-yellow-700';
+
+            alertDiv.className = `fixed top-4 right-4 z-[9999] p-4 rounded-lg border-l-4 shadow-xl ${bgColor} transition-opacity duration-500`;
+            alertDiv.textContent = message;
+
+            container.appendChild(alertDiv);
+
+            setTimeout(() => {
+                alertDiv.classList.add('opacity-0');
+                setTimeout(() => alertDiv.remove(), 500);
+            }, 5000);
+        };
+
+        window.showConfirm = (message) => {
+            // استخدام Modal مخصص بدلاً من window.confirm
+            const modal = document.getElementById('confirm-modal');
+            document.getElementById('confirm-message').textContent = message;
+            modal.classList.remove('hidden');
+
+            return new Promise((resolve) => {
+                document.getElementById('confirm-yes').onclick = () => {
+                    modal.classList.add('hidden');
+                    resolve(true);
+                };
+                document.getElementById('confirm-no').onclick = () => {
+                    modal.classList.add('hidden');
+                    resolve(false);
+                };
+            });
+        };
+        
+        // البدء بالتهيئة عند تحميل النافذة
+        window.onload = initFirebase;
+    </script>
+    <style>
+        /* أنماط أساسية لضمان العرض على كامل الشاشة */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #f8f8f8;
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        .product-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <!-- شريط الرسائل -->
+    <div id="message-container"></div>
+
+    <!-- رأس الصفحة -->
+    <header class="bg-amber-600 shadow-md sticky top-0 z-10">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-3xl font-extrabold text-white tracking-wider">
+                ابن البلد
+            </h1>
+            <p class="text-white/80 text-lg">الكتالوج الإلكتروني</p>
+        </div>
+    </header>
+
+    <!-- المحتوى الرئيسي (الكاتالوج) -->
+    <main class="container mx-auto px-4 py-8 flex-grow">
+        <h2 class="text-3xl font-bold text-gray-800 mb-8 border-b-2 border-amber-500 pb-2">المنتجات المميزة</h2>
+        <div id="catalog-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            <!-- سيتم تحميل المنتجات هنا بواسطة JavaScript -->
+            <div class="col-span-full text-center py-20">
+                <p class="text-gray-500">جاري تحميل المنتجات...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- زر وضع الإدارة (عائم) -->
+    <div class="fixed bottom-6 right-6 z-40">
+        <button id="admin-btn" onclick="window.toggleAdminMode()" class="bg-gray-700 hover:bg-gray-800 text-white p-4 rounded-full shadow-2xl transition-all duration-300 transform active:scale-95" title="وضع الإدارة">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-.28-.84-.51-1.3-.64-.91-.25-1.87-.25-2.78 0-.46.13-.92.36-1.3.64l-1.42 1.04-1.3-1.3c-.62-.62-1.72-.62-2.34 0-.62.62-.62 1.72 0 2.34l1.3 1.3-1.04 1.42c-.28.38-.51.84-.64 1.3-.25.91-.25 1.87 0 2.78.13.46.36.92.64 1.3l1.04 1.42-1.3 1.3c-.62.62-.62 1.72 0 2.34.62.62 1.72.62 2.34 0l1.3-1.3 1.42 1.04c.38.28.84.51 1.3.64.91.25 1.87.25 2.78 0 .46-.13.92-.36 1.3-.64l1.42-1.04 1.3 1.3c.62.62.62 1.72 0 2.34-.62-.62-1.72-.62-2.34 0l-1.3 1.3-1.42-1.04zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
+        </button>
+        <!-- لوحة إدخال كلمة المرور -->
+        <div id="admin-panel" class="hidden absolute bottom-20 right-0 p-4 bg-white rounded-lg shadow-xl w-64">
+            <p class="text-sm font-semibold mb-2 text-gray-700 text-right">أدخل كلمة المرور للدخول كمدير:</p>
+            <input type="password" id="auth-input" placeholder="كلمة المرور" class="w-full p-2 border border-gray-300 rounded-lg text-right focus:ring-amber-500 focus:border-amber-500" onkeyup="if(event.key==='Enter') window.toggleAdminMode()">
+            <button onclick="window.toggleAdminMode()" class="mt-3 w-full bg-amber-600 text-white p-2 rounded-lg hover:bg-amber-700 transition-colors">دخول</button>
+            <p class="mt-2 text-xs text-gray-500 text-right">المفتاح: 🔑 mahmoud123@</p>
+        </div>
+    </div>
+
+    <!-- Modal لإضافة/تعديل المنتج -->
+    <div id="product-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-[100] flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
+            <h3 id="modal-title" class="text-2xl font-bold text-gray-800 mb-4 text-right border-b pb-2">إضافة منتج جديد</h3>
+            <form id="product-form" onsubmit="window.saveProduct(event)">
+                <input type="hidden" id="product-id">
+                
+                <div class="mb-4">
+                    <label for="product-name" class="block text-sm font-medium text-gray-700 text-right">اسم المنتج:</label>
+                    <input type="text" id="product-name" required class="mt-1 block w-full p-3 border border-gray-300 rounded-lg text-right focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                
+                <div class="mb-4">
+                    <label for="product-price" class="block text-sm font-medium text-gray-700 text-right">السعر (ج.م):</label>
+                    <input type="number" step="0.01" id="product-price" required class="mt-1 block w-full p-3 border border-gray-300 rounded-lg text-right focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                
+                <div class="mb-4">
+                    <label for="product-description" class="block text-sm font-medium text-gray-700 text-right">الوصف:</label>
+                    <textarea id="product-description" rows="3" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg text-right focus:ring-amber-500 focus:border-amber-500"></textarea>
+                </div>
+                
+                <div class="mb-6">
+                    <label for="product-image" class="block text-sm font-medium text-gray-700 text-right">رابط الصورة (URL):</label>
+                    <input type="url" id="product-image" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg text-right focus:ring-amber-500 focus:border-amber-500">
+                    <p class="mt-1 text-xs text-gray-500 text-right">يمكنك استخدام هذا الرابط كصورة: https://placehold.co/400x300/FEE6AA/8D5400?text=منتج</p>
+                </div>
+                
+                <div class="flex justify-end space-x-3 rtl:space-x-reverse">
+                    <button type="button" onclick="window.closeModal()" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors">إلغاء</button>
+                    <button type="submit" id="save-product-btn" class="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">إضافة المنتج</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Modal التأكيد المخصص (بديل لـ window.confirm) -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-[100] flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6 text-center">
+            <p id="confirm-message" class="text-lg font-semibold text-gray-800 mb-6"></p>
+            <div class="flex justify-center space-x-4 rtl:space-x-reverse">
+                <button id="confirm-no" class="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors">لا</button>
+                <button id="confirm-yes" class="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">نعم، متأكد</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
