@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ابن البلد - منتجات طبيعية 100%</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <!-- START: Firebase CDN Scripts (for Firestore) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <!-- END: Firebase CDN Scripts -->
+
+    <style>
+        /* Arabic Font & Global Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+        body {
+            font-family: 'Cairo', sans-serif;
+            direction: rtl;
+            background-color: #f3f4f6;
+            min-height: 100vh;
+        }
+
+        /* Container for Centering */
+        .main-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        /* Header Styling */
+        .header {
+            background-color: #5b21b6; /* Deep Purple */
+            color: white;
+            padding: 3rem 1.5rem 1.5rem;
+            border-bottom-left-radius: 1.5rem;
+            border-bottom-right-radius: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Product Card Styling */
+        .product-card {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            background-color: white;
+        }
+        .product-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Admin Button (Floating Action Button) */
+        .admin-button {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 56px;
+            height: 56px;
+            background-color: #f97316; /* Orange */
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            z-index: 50;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        .admin-button:hover {
+            background-color: #ea580c;
+            transform: scale(1.05);
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background-color: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-width: 90%;
+            width: 400px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        /* Toast Notification */
+        #toast {
+            position: fixed;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.75rem 1.5rem;
+            background-color: #333;
+            color: white;
+            border-radius: 0.5rem;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            z-index: 1000;
+        }
+        #toast.show {
+            opacity: 1;
+        }
+        #toast.error {
+            background-color: #dc2626;
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="shadow-lg"></div>
+
+    <!-- Header Section -->
+    <header class="header">
+        <div class="main-container text-center">
+            <h1 class="text-4xl font-extrabold mb-1">ابن البلد</h1>
+            <p class="text-lg font-light opacity-90">منتجات طبيعية 100%</p>
+        </div>
+    </header>
+
+    <!-- Products List Section -->
+    <main class="main-container mt-[-1.5rem] pb-24">
+        <div id="products-container" class="space-y-4">
+            <!-- Products will be injected here -->
+            <div id="empty-state" class="product-card p-6 text-center text-gray-500 rounded-xl mt-8">
+                <i class="fas fa-box-open text-4xl mb-3 text-gray-400"></i>
+                <h2 class="text-xl font-bold">لا توجد منتجات</h2>
+                <p>اضغط على زر 🔧 لإضافة منتجات جديدة.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Admin Floating Action Button -->
+    <button id="adminBtn" class="admin-button" title="وضع الإدارة">
+        <i class="fas fa-wrench text-2xl"></i>
+    </button>
+
+    <!-- Product Management Modal -->
+    <div id="productModal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="modalTitle" class="text-2xl font-bold text-gray-800 mb-4">إضافة منتج جديد</h2>
+            <form id="productForm">
+                <input type="hidden" id="productId">
+                <div class="mb-4">
+                    <label for="productName" class="block text-sm font-medium text-gray-700 mb-1">اسم المنتج</label>
+                    <input type="text" id="productName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div class="mb-4">
+                    <label for="productPrice" class="block text-sm font-medium text-gray-700 mb-1">السعر (بالجنيه)</label>
+                    <input type="number" id="productPrice" required step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div class="mb-4">
+                    <label for="productDescription" class="block text-sm font-medium text-gray-700 mb-1">الوصف</label>
+                    <textarea id="productDescription" required rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-orange-500 focus:border-orange-500"></textarea>
+                </div>
+                <div class="flex justify-between items-center mt-6">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition duration-150">إلغاء</button>
+                    <button type="submit" id="submitBtn" class="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition duration-150 font-semibold">حفظ المنتج</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Admin Controls Modal (for the "+" button) -->
+    <div id="adminControlsModal" class="modal-overlay">
+        <div class="modal-content text-center">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">خيارات الإدارة</h2>
+            <button onclick="openProductModal()" class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-150 mb-3">
+                <i class="fas fa-plus ml-2"></i>إضافة منتج جديد
+            </button>
+            <button onclick="closeAdminControls()" class="w-full bg-gray-300 text-gray-800 py-3 rounded-lg hover:bg-gray-400 transition duration-150">
+                إغلاق
+            </button>
+        </div>
+    </div>
+
+
+    <script>
+        // *** 1. مفاتيح إعدادات Firebase الخاصة بك (المحدثة) ***
+        // تم تحديث هذا البلوك باستخدام الإعدادات التي قدمتها.
+        const firebaseConfig = {
+            apiKey: "AIzaSyC5AHTL7eEyzCw4EidbdF0thu5-9zDacT0",
+            authDomain: "ibn-elbalad.firebaseapp.com",
+            projectId: "ibn-elbalad",
+            storageBucket: "ibn-elbalad.firebasestorage.app",
+            messagingSenderId: "558524382606",
+            appId: "1:558524382606:web:02f2f1afdf336f184df8df",
+            measurementId: "G-V8RC87X2TX"
+        };
+
+        // تهيئة Firebase و Firestore
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = app.firestore();
+        // نهاية الإعدادات
+
+        // Global State
+        let products = [];
+        let editingProductId = null;
+        let isAdmin = false;
+
+        // UI Elements
+        const productsContainer = document.getElementById('products-container');
+        const emptyState = document.getElementById('empty-state');
+        const productModal = document.getElementById('productModal');
+        const adminControlsModal = document.getElementById('adminControlsModal');
+        const adminBtn = document.getElementById('adminBtn');
+        const modalTitle = document.getElementById('modalTitle');
+        const submitBtn = document.getElementById('submitBtn');
+        const toast = document.getElementById('toast');
+        
+        // Admin Password
+        const ADMIN_PASSWORD = 'mahmoud123@';
+
+        // --- Utility Functions ---
+
+        // Show a temporary notification
+        function showToast(message, isError = false) {
+            toast.textContent = message;
+            toast.className = 'shadow-lg show';
+            if (isError) {
+                toast.classList.add('error');
+            }
+            setTimeout(() => {
+                toast.classList.remove('show', 'error');
+            }, 3000);
+        }
+
+        // --- Modal Functions ---
+
+        function openProductModal() {
+            editingProductId = null;
+            modalTitle.textContent = 'إضافة منتج جديد';
+            submitBtn.textContent = 'حفظ المنتج';
+            document.getElementById('productForm').reset();
+            adminControlsModal.classList.remove('active');
+            productModal.classList.add('active');
+        }
+
+        function closeModal() {
+            productModal.classList.remove('active');
+            adminControlsModal.classList.remove('active');
+        }
+
+        function closeAdminControls() {
+            adminControlsModal.classList.remove('active');
+        }
+        
+        // --- Admin Mode Toggle ---
+        
+        adminBtn.addEventListener('click', () => {
+            if (isAdmin) {
+                // If already admin, open controls (Add button)
+                adminControlsModal.classList.add('active');
+            } else {
+                // If not admin, prompt for password
+                const password = prompt("أدخل كلمة مرور الإدارة:");
+                if (password === ADMIN_PASSWORD) {
+                    isAdmin = true;
+                    adminBtn.classList.add('bg-green-600');
+                    adminBtn.classList.remove('bg-orange-600');
+                    showToast('تم تفعيل وضع الإدارة بنجاح ✅');
+                } else if (password !== null) {
+                    showToast('كلمة المرور غير صحيحة ❌', true);
+                }
+            }
+        });
+
+        // --- CRUD Operations (Firebase Firestore) ---
+
+        // Load products from Firestore (Real-time listener)
+        function listenForProducts() {
+            // الاستماع لأي تغييرات في مجموعة 'products'
+            db.collection("products").orderBy("name").onSnapshot(snapshot => {
+                products = [];
+                snapshot.forEach(doc => {
+                    // إضافة المنتجات مع معرف Firestore
+                    products.push({ id: doc.id, ...doc.data() });
+                });
+                renderProducts(); // إعادة رسم المنتجات
+            }, error => {
+                console.error("Error listening to products: ", error);
+                showToast("❌ خطأ في تحميل المنتجات!", true);
+            });
+        }
+        
+        // Form submit (Add/Edit Product)
+        document.getElementById('productForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('productName').value.trim();
+            const price = parseFloat(document.getElementById('productPrice').value);
+            const description = document.getElementById('productDescription').value.trim();
+            
+            const productData = { name, price, description };
+            
+            try {
+                if (editingProductId) {
+                    // وضع التعديل: تحديث المنتج في Firestore
+                    await db.collection("products").doc(editingProductId).update(productData);
+                    showToast('تم تحديث المنتج بنجاح ✅');
+                } else {
+                    // وضع الإضافة: إنشاء مستند جديد في Firestore
+                    await db.collection("products").add(productData);
+                    showToast('تم إضافة المنتج بنجاح ✅');
+                }
+            } catch (error) {
+                console.error("Error saving product: ", error);
+                showToast("❌ حدث خطأ أثناء الحفظ!", true);
+            }
+            
+            document.getElementById('productModal').classList.remove('active');
+        });
+
+        // Delete product
+        window.deleteProduct = async function(id) {
+            if (!isAdmin) {
+                showToast('يجب تفعيل وضع الإدارة أولاً.', true);
+                return;
+            }
+            try {
+                if (confirm('هل أنت متأكد من حذف هذا المنتج؟')) {
+                    // الحذف من Firestore
+                    await db.collection("products").doc(id).delete();
+                    showToast('تم حذف المنتج بنجاح ✅');
+                }
+            } catch (error) {
+                console.error("Error deleting product: ", error);
+                showToast("❌ حدث خطأ أثناء الحذف!", true);
+            }
+        };
+
+        // Edit product
+        window.editProduct = function(id) {
+            if (!isAdmin) {
+                showToast('يجب تفعيل وضع الإدارة أولاً.', true);
+                return;
+            }
+            const product = products.find(p => p.id === id);
+            if (product) {
+                editingProductId = id;
+                modalTitle.textContent = 'تعديل المنتج';
+                submitBtn.textContent = 'حفظ التعديلات';
+                document.getElementById('productName').value = product.name;
+                document.getElementById('productPrice').value = product.price;
+                document.getElementById('productDescription').value = product.description;
+                productModal.classList.add('active');
+            }
+        };
+
+        // --- Rendering ---
+
+        function renderProducts() {
+            productsContainer.innerHTML = ''; // Clear existing products
+            
+            // Show/hide empty state based on products count
+            const isEmpty = products.length === 0;
+            emptyState.style.display = isEmpty ? 'block' : 'none';
+
+            if (!isEmpty) {
+                products.forEach(product => {
+                    const card = document.createElement('div');
+                    card.className = 'product-card p-4 rounded-xl shadow-md flex justify-between items-start space-x-4';
+                    
+                    const details = `
+                        <div class="flex-grow">
+                            <h3 class="text-xl font-bold text-gray-900 mb-1">${product.name}</h3>
+                            <p class="text-gray-600 mb-3">${product.description}</p>
+                            <p class="text-2xl font-extrabold text-orange-600">${(product.price || 0).toFixed(2)} ج.م</p>
+                        </div>
+                    `;
+
+                    let actions = '';
+                    if (isAdmin) {
+                        actions = `
+                            <div class="flex space-x-2 rtl:space-x-reverse">
+                                <button onclick="editProduct('${product.id}')" title="تعديل" class="text-blue-500 hover:text-blue-700 p-2 transition duration-150">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button onclick="deleteProduct('${product.id}')" title="حذف" class="text-red-500 hover:text-red-700 p-2 transition duration-150">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        `;
+                    }
+
+                    card.innerHTML = details + actions;
+                    productsContainer.appendChild(card);
+                });
+            }
+        }
+
+        // --- Initialization ---
+        
+        // Start listening to Firebase for product changes
+        listenForProducts();
+        
+    </script>
+</body>
+</html>
