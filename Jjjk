@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ابن البلد - متجر</title>
+<style>
+  body{font-family: system-ui,Segoe UI,Arial;direction:rtl;background:#f6f6f8;margin:0;padding:0;color:#222}
+  header{background:#0b6; padding:18px 16px; color:#fff; display:flex;align-items:center;justify-content:space-between}
+  header h1{margin:0;font-size:20px}
+  .container{max-width:980px;margin:18px auto;padding:0 12px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .btn{background:#0b6;border:none;padding:8px 12px;color:#fff;border-radius:6px;cursor:pointer}
+  .btn.secondary{background:#444}
+  .card{background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 6px rgba(0,0,0,0.06);display:flex;gap:12px;align-items:center}
+  img.product-img{width:110px;height:80px;object-fit:cover;border-radius:6px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .product-title{font-weight:700;margin:0 0 6px 0}
+  .product-price{color:#0a8;font-weight:700}
+  .admin-panel{background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 10px rgba(0,0,0,0.06);margin-bottom:12px}
+  label{display:block;margin:8px 0 4px}
+  input[type=text], input[type=password], textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:6px}
+  .tiny{font-size:12px;color:#666}
+  footer{padding:14px;text-align:center;color:#666;font-size:13px}
+  .flexrow{display:flex;gap:8px;align-items:center}
+  .right{margin-right:auto}
+  .danger{background:#c33}
+</style>
+</head>
+<body>
+<header>
+  <h1>ابن البلد</h1>
+  <div style="font-size:14px">متجر بسيط لإضافة منتجات بسرعة</div>
+</header>
+
+<div class="container">
+  <div class="controls">
+    <button class="btn" id="openAdminBtn">دخول/لوحة الأدمن</button>
+    <button class="btn secondary" id="clearAllBtn">حذف كل المنتجات (محلي)</button>
+    <button class="btn secondary" id="exportBtn">تصدير JSON</button>
+    <button class="btn secondary" id="importBtn">استيراد JSON</button>
+  </div>
+
+  <div id="adminArea" style="display:none" class="admin-panel">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <div class="right tiny">أنت في وضع الأدمن</div>
+      <button class="btn danger" id="logoutBtn">خروج</button>
+    </div>
+
+    <form id="productForm">
+      <label>اسم المنتج</label>
+      <input type="text" id="pname" required placeholder="مثال: عسل أبيض">
+      <label>السعر</label>
+      <input type="text" id="pprice" required placeholder="مثال: 120 جنيه">
+      <label>رابط الصورة (URL)</label>
+      <input type="text" id="pimage" placeholder="رابط صورة (يمكن تركه فارغاً)">
+      <label>وصف المنتج</label>
+      <textarea id="pdesc" rows="3" placeholder="وصف قصير"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" type="submit">حفظ المنتج</button>
+        <button class="btn secondary" id="cancelAdd" type="button">إلغاء</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- login -->
+  <div id="loginArea" style="display:none" class="card" role="region" aria-label="تسجيل دخول">
+    <div style="flex:1">
+      <label>كلمة السر للأدمن</label>
+      <input type="password" id="adminPass" placeholder="ادخل كلمة السر">
+      <div style="margin-top:8px">
+        <button class="btn" id="loginBtn">دخول</button>
+        <button class="btn secondary" id="cancelLogin">إلغاء</button>
+      </div>
+      <div class="tiny" style="margin-top:8px">كلمة السر محفوظة في الكود: <strong>mahmoud123@</strong></div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:6px">المنتجات</h2>
+  <div id="productsGrid" class="grid" aria-live="polite"></div>
+
+  <div style="margin-top:12px" class="tiny">ملاحظة: البيانات مخزنة محليًا في المتصفح. لمشاركة الموقع استخدم رفع الملف إلى استضافة (GitHub Pages / Neocities / Netlify) أو استخدم الرابط المحلي عند رفعه.</div>
+</div>
+
+<footer>
+  صنع بسرعة — ابـن البلد
+</footer>
+
+<script>
+/* إعداد مبدئي */
+const ADMIN_PASS = 'mahmoud123@'; // كما طلبت
+const LS_KEY = 'ibn_elbalad_products_v1';
+
+function getProducts(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return [];}
+}
+function saveProducts(arr){
+  localStorage.setItem(LS_KEY, JSON.stringify(arr));
+}
+
+function renderProducts(){
+  const grid = document.getElementById('productsGrid');
+  const products = getProducts();
+  grid.innerHTML = products.map((p, idx) => `
+    <div class="card" data-idx="${idx}">
+      <img class="product-img" src="${p.image||'https://via.placeholder.com/300x200?text=No+Image'}" alt="${escapeHtml(p.name)}" />
+      <div style="flex:1">
+        <h3 class="product-title">${escapeHtml(p.name)}</h3>
+        <div class="product-price">${escapeHtml(p.price)}</div>
+        <div class="tiny" style="margin-top:6px">${escapeHtml(p.desc||'')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn secondary viewBtn">عرض</button>
+        ${isAdmin() ? '<button class="btn" data-action="edit">تعديل</button><button class="btn danger" data-action="del">حذف</button>' : ''}
+      </div>
+    </div>
+  `).join('');
+  attachProductButtons();
+}
+
+function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
+
+function isAdmin(){ return sessionStorage.getItem('ibn_admin')==='1'; }
+
+function attachProductButtons(){
+  document.querySelectorAll('.viewBtn').forEach(b=>{
+    b.onclick = (e)=>{
+      const idx = +e.target.closest('.card').dataset.idx;
+      const p = getProducts()[idx];
+      alert(`${p.name}\n\nالسعر: ${p.price}\n\n${p.desc||''}`);
+    };
+  });
+  if(isAdmin()){
+    document.querySelectorAll('[data-action]').forEach(b=>{
+      b.onclick = (e)=>{
+        const action = e.target.dataset.action;
+        const idx = +e.target.closest('.card').dataset.idx;
+        if(action==='del'){
+          if(confirm('هل تريد حذف المنتج؟')){
+            const arr = getProducts();
+            arr.splice(idx,1);
+            saveProducts(arr);
+            renderProducts();
+          }
+        } else if(action==='edit'){
+          const p = getProducts()[idx];
+          document.getElementById('pname').value = p.name;
+          document.getElementById('pprice').value = p.price;
+          document.getElementById('pimage').value = p.image||'';
+          document.getElementById('pdesc').value = p.desc||'';
+          // حذف القديم ثم انتظار حفظ كعنصر جديد (أسهل)
+          const arr = getProducts();
+          arr.splice(idx,1);
+          saveProducts(arr);
+          renderProducts();
+          window.scrollTo({top:0,behavior:'smooth'});
+        }
+      };
+    });
+  }
+}
+
+/*
