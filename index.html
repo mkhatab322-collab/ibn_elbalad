@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ar" dir="rtl" style="height: 100%;">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ابن البلد - كاتالوج المنتجات</title>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+        body {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100%;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+
+        .product-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .delete-btn {
+            transition: all 0.3s ease;
+        }
+
+        .delete-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90%;
+            overflow-y: auto;
+        }
+
+        .admin-toggle {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: #2563eb;
+            color: white;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 24px;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+
+        .admin-toggle:hover {
+            background: #1d4ed8;
+            transform: scale(1.1);
+        }
+
+        .admin-controls {
+            display: none;
+        }
+
+        .admin-mode .admin-controls {
+            display: block;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 2000;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.active {
+            display: block;
+        }
+
+        .toast.error {
+            background: #ef4444;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-state svg {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 20px;
+            opacity: 0.3;
+        }
+    </style>
+  <style>@view-transition { navigation: auto; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ </head>
+ <body style="height: 100%;">
+  <div style="width: 100%; min-height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+   <main style="width: 100%; min-height: 100%; padding: 20px;"><!-- Header -->
+    <header style="background: white; border-radius: 20px; padding: 30px; margin-bottom: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center;">
+     <h1 id="storeName" style="font-size: 42px; font-weight: bold; color: #2563eb; margin: 0 0 10px 0;">ابن البلد</h1>
+     <p id="storeTagline" style="font-size: 18px; color: #6b7280; margin: 0;">منتجات طبيعية 100%</p>
+    </header><!-- Products Grid -->
+    <div id="productsContainer" style="background: white; border-radius: 20px; padding: 30px; margin-bottom: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); min-height: 400px;">
+     <div id="productsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px;"><!-- Products will be inserted here -->
+     </div><!-- Empty State -->
+     <div id="emptyState" class="empty-state" style="display: none;">
+      <svg fill="none" stroke="currentColor" viewbox="0 0 24 24" style="color: #9ca3af;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+      </svg>
+      <h3 style="font-size: 24px; color: #6b7280; margin: 0 0 10px 0;">لا توجد منتجات</h3>
+      <p style="color: #9ca3af; font-size: 16px;">اضغط على زر 🔧 لإضافة منتجات جديدة</p>
+     </div>
+    </div><!-- Footer -->
+    <footer style="text-align: center; color: white; padding: 20px;">
+     <p id="footerText" style="margin: 0; font-size: 16px; opacity: 0.9;">جميع الحقوق محفوظة © 2025</p>
+    </footer>
+   </main><!-- Admin Toggle Button --> <button class="admin-toggle" id="adminToggle" title="وضع الإدارة">🔧</button> <!-- Add/Edit Product Modal -->
+   <div id="productModal" class="modal">
+    <div class="modal-content">
+     <h2 id="modalTitle" style="font-size: 28px; margin: 0 0 25px 0; color: #1f2937; text-align: center;">إضافة منتج جديد</h2>
+     <form id="productForm">
+      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">اسم المنتج</label> <input type="text" id="productName" required style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 16px; transition: border-color 0.3s;" onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e5e7eb'">
+      </div>
+      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">السعر (جنيه)</label> <input type="number" id="productPrice" required min="0" step="0.01" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 16px; transition: border-color 0.3s;" onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e5e7eb'">
+      </div>
+      <div style="margin-bottom: 25px;"><label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">الوصف</label> <textarea id="productDescription" rows="3" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 16px; resize: vertical; transition: border-color 0.3s;" onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#e5e7eb'"></textarea>
+      </div>
+      <div style="display: flex; gap: 10px;"><button type="submit" style="flex: 1; background: #2563eb; color: white; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.3s;" onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">حفظ</button> <button type="button" id="cancelBtn" style="flex: 1; background: #6b7280; color: white; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.3s;" onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">إلغاء</button>
+      </div>
+     </form>
+    </div>
+   </div><!-- Toast Notification -->
+   <div id="toast" class="toast"></div>
+  </div>
+  <script>
+        // Configuration
+        const defaultConfig = {
+            store_name: 'ابن البلد',
+            store_tagline: 'منتجات طبيعية 100%',
+            footer_text: 'جميع الحقوق محفوظة © 2025'
+        };
+
+        // Admin Password
+        const ADMIN_PASSWORD = 'mahmoud123@';
+
+        // State
+        let products = [];
+        let isAdminMode = false;
+        let editingProductId = null;
+
+        // Load products from localStorage
+        function loadProducts() {
+            const stored = localStorage.getItem('ibnElbaladProducts');
+            products = stored ? JSON.parse(stored) : [];
+            renderProducts();
+        }
+
+        // Save products to localStorage
+        function saveProducts() {
+            localStorage.setItem('ibnElbaladProducts', JSON.stringify(products));
+            renderProducts();
+        }
+
+        // Show toast notification
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('active');
+            if (isError) {
+                toast.classList.add('error');
+            } else {
+                toast.classList.remove('error');
+            }
+            setTimeout(() => {
+                toast.classList.remove('active');
+            }, 3000);
+        }
+
+        // Render products
+        function renderProducts() {
+            const grid = document.getElementById('productsGrid');
+            const emptyState = document.getElementById('emptyState');
+            
+            grid.innerHTML = '';
+            
+            if (products.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            
+            emptyState.style.display = 'none';
+            
+            products.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'product-card';
+                card.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; padding: 25px; color: white; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1);';
+                
+                card.innerHTML = `
+                    <div style="margin-bottom: 15px;">
+                        <h3 style="font-size: 24px; font-weight: bold; margin: 0 0 10px 0;">${product.name}</h3>
+                        <p style="font-size: 32px; font-weight: bold; margin: 0; color: #fbbf24;">${product.price} جنيه</p>
+                    </div>
+                    ${product.description ? `<p style="font-size: 14px; opacity: 0.9; line-height: 1.6; margin: 0;">${product.description}</p>` : ''}
+                    
+                    <div class="admin-controls" style="margin-top: 20px; display: flex; gap: 10px;">
+                        <button onclick="editProduct('${product.id}')" style="flex: 1; background: white; color: #2563eb; padding: 10px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;">تعديل</button>
+                        <button onclick="deleteProduct('${product.id}')" class="delete-btn" style="background: #ef4444; color: white; padding: 10px 15px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">حذف</button>
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            });
+        }
+
+        // Toggle admin mode with password protection
+        document.getElementById('adminToggle').addEventListener('click', () => {
+            // If trying to enable admin mode, check password
+            if (!isAdminMode) {
+                const enteredPassword = prompt('🔐 أدخل كلمة السر للدخول لوضع الإدارة:');
+                
+                if (enteredPassword !== ADMIN_PASSWORD) {
+                    showToast('❌ كلمة السر خاطئة!', true);
+                    return;
+                }
+            }
+            
+            isAdminMode = !isAdminMode;
+            document.body.classList.toggle('admin-mode', isAdminMode);
+            
+            if (isAdminMode) {
+                showToast('وضع الإدارة مُفعّل ✅');
+                // Add "Add Product" button
+                if (!document.getElementById('addProductBtn')) {
+                    const addBtn = document.createElement('button');
+                    addBtn.id = 'addProductBtn';
+                    addBtn.textContent = '➕ إضافة منتج';
+                    addBtn.style.cssText = 'background: #10b981; color: white; padding: 15px 30px; border: none; border-radius: 12px; font-size: 18px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); transition: all 0.3s; margin-bottom: 20px;';
+                    addBtn.onmouseover = () => addBtn.style.background = '#059669';
+                    addBtn.onmouseout = () => addBtn.style.background = '#10b981';
+                    addBtn.onclick = openAddModal;
+                    document.getElementById('productsContainer').insertBefore(addBtn, document.getElementById('productsGrid'));
+                }
+            } else {
+                showToast('وضع العرض للعملاء 👀');
+                const addBtn = document.getElementById('addProductBtn');
+                if (addBtn) addBtn.remove();
+            }
+        });
+
+        // Open add modal
+        function openAddModal() {
+            editingProductId = null;
+            document.getElementById('modalTitle').textContent = 'إضافة منتج جديد';
+            document.getElementById('productForm').reset();
+            document.getElementById('productModal').classList.add('active');
+        }
+
+        // Edit product
+        window.editProduct = function(id) {
+            const product = products.find(p => p.id === id);
+            if (!product) return;
+            
+            editingProductId = id;
+            document.getElementById('modalTitle').textContent = 'تعديل المنتج';
+            document.getElementById('productName').value = product.name;
+            document.getElementById('productPrice').value = product.price;
+            document.getElementById('productDescription').value = product.description || '';
+            document.getElementById('productModal').classList.add('active');
+        };
+
+        // Delete product
+        window.deleteProduct = function(id) {
+            products = products.filter(p => p.id !== id);
+            saveProducts();
+            showToast('تم حذف المنتج ✅');
+        };
+
+        // Form submit
+        document.getElementById('productForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('productName').value.trim();
+            const price = parseFloat(document.getElementById('productPrice').value);
+            const description = document.getElementById('productDescription').value.trim();
+            
+            if (editingProductId) {
+                const product = products.find(p => p.id === editingProductId);
+                if (product) {
+                    product.name = name;
+                    product.price = price;
+                    product.description = description;
+                    showToast('تم تحديث المنتج ✅');
+                }
+            } else {
+                products.push({
+                    id: Date.now().toString(),
+                    name,
+                    price,
+                    description
+                });
+                showToast('تم إضافة المنتج ✅');
+            }
+            
+            saveProducts();
+            document.getElementById('productModal').classList.remove('active');
+        });
+
+        // Cancel button
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            document.getElementById('productModal').classList.remove('active');
+        });
+
+        // Close modal on outside click
+        document.getElementById('productModal').addEventListener('click', (e) => {
+            if (e.target.id === 'productModal') {
+                document.getElementById('productModal').classList.remove('active');
+            }
+        });
+
+        // Element SDK Integration
+        async function onConfigChange(config) {
+            document.getElementById('storeName').textContent = config.store_name || defaultConfig.store_name;
+            document.getElementById('storeTagline').textContent = config.store_tagline || defaultConfig.store_tagline;
+            document.getElementById('footerText').textContent = config.footer_text || defaultConfig.footer_text;
+        }
+
+        function mapToCapabilities(config) {
+            return {
+                recolorables: [],
+                borderables: [],
+                fontEditable: undefined,
+                fontSizeable: undefined
+            };
+        }
+
+        function mapToEditPanelValues(config) {
+            return new Map([
+                ['store_name', config.store_name || defaultConfig.store_name],
+                ['store_tagline', config.store_tagline || defaultConfig.store_tagline],
+                ['footer_text', config.footer_text || defaultConfig.footer_text]
+            ]);
+        }
+
+        // Initialize
+        if (window.elementSdk) {
+            window.elementSdk.init({
+                defaultConfig,
+                onConfigChange,
+                mapToCapabilities,
+                mapToEditPanelValues
+            });
+        }
+
+        loadProducts();
+    </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9a8f2950728a2438',t:'MTc2NDg5MTc1OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
